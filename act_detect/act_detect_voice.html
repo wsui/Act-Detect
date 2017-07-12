@@ -1,0 +1,402 @@
+<html>
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+<title>室内行为识别</title>
+<script>
+//唯一标志区分每次识别
+function guid() {
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+    var r = Math.random()*16|0, v = c == 'x' ? r : (r&0x3|0x8);
+    return v.toString(16);
+  });
+}
+//数组排序函数
+function sortNumber(a,b)
+{
+	return a - b
+}
+</script>
+</head>
+<body>
+<audio id='站起' src='static/zhanqi.mp3'  ></audio>
+<audio id='坐下' src='static/zuoxia.mp3'  ></audio>
+<audio id='走路' src='static/zoulu.mp3' ></audio>
+<audio id='上电梯' src='static/shangdianti.mp3' ></audio>
+<audio id='下电梯' src='static/xiadianti.mp3' ></audio>
+<audio id='上楼梯' src='static/shanglouti.mp3' ></audio>
+<audio id='下楼梯' src='static/xialouti.mp3'  ></audio>
+<audio id='跳跃' src='static/tiaoyue.mp3' ></audio>
+<audio id='玩手机' src='static/wanshouji.mp3'  ></audio>
+<button id='bt' onclick="bt_click()" type="button" style="margin:0 auto; width:20%; height:8%; display:block; font-size:32px">开始</button>
+<hr/>
+	  <p>
+		x轴加速度：<span id="x">0</span>
+	  </p>
+	  <p>
+		y轴加速度：<span id="y">0</span>
+	  </p>
+	  <p>
+		z轴加速度：<span id="z">0</span>
+	  </p>
+	  <p>
+		三轴加速度和：<span id="svm">0</span>
+	  </p>
+  <hr />
+	  <p>
+		SVM(max1)：<span id="max1">0</span>  SVM(max2)：<span id="max2">0</span>  SVM(max3)：<span id="max3">0</span>
+	  </p>
+	  <p>
+		SVM(min1)：<span id="min1">0</span>  SVM(min2)：<span id="min2">0</span>  SVM(min3)：<span id="min3">0</span>
+	  </p>
+	  <p>
+		SVM(mean1)：<span id="mean1">0</span>  SVM(mean2)：<span id="mean2">0</span>  SVM(mean3)：<span id="mean3">0</span>
+	  </p>
+	  <p>
+		SVM(std1)：<span id="std1">0</span>  SVM(std2)：<span id="std2">0</span>  SVM(std3)：<span id="std3">0</span>
+	  </p>
+	  <p>
+		Fi-val1：<span id="fival1">0</span>  Fi-val2：<span id="fival2">0</span>  Fi-val3：<span id="fival3">0</span>
+	  </p>
+	  <p>
+		IQR1：<span id="IQR1">0</span>  IQR2：<span id="IQR2">0</span>  IQR3：<span id="IQR3">0</span>
+	  </p>	  
+	  <p>
+		iqr_s：<span id="iqr_s">0</span>
+	  </p>
+  <hr />
+	  <p>
+		手机采样间隔：<span id="interval">0</span>毫秒
+	  </p>
+	  <p> 
+		运行时间：<span id='n'></span>秒
+	  </p>
+<hr/>
+<p>****************************************返回结果****************************************</p>
+<div id="msg"></div>
+<script language="javascript">
+	var acts_code = {
+		'8': '玩手机',
+		'7': '跳跃',
+		'5': '上电梯',
+		'6': '下电梯',
+		'3': '上楼梯',
+		'4': '下楼梯',
+		'2': '走路',
+		'0': '坐下',
+		'1': '站起',
+		'-1': '未识别'
+	}
+	var flag=false; //开始&结束
+	//var ck;  //设置反复执行
+	var timer;
+	var n=0;  //采样次数
+	var ylst1=[];
+	var svmlst1=[];
+	var ylst2=[];
+	var svmlst2=[];
+	var ylst3=[];
+	var svmlst3=[];
+	var interv;   //采样间隔
+	gd=guid();  //唯一标志区分每次识别
+	var myDate;
+	//localStorage.setItem("act_guid",gd);  //区分用户或不同识别
+	var max1=document.getElementById("max1").innerText;
+	var max2=document.getElementById("max2").innerText;
+	var max3=document.getElementById("max3").innerText;
+	var min1=document.getElementById("min1").innerText;
+	var min2=document.getElementById("min2").innerText;
+	var min3=document.getElementById("min3").innerText;
+	var mean1=document.getElementById("mean1").innerText;
+	var mean2=document.getElementById("mean2").innerText;
+	var mean3=document.getElementById("mean3").innerText;
+	var std1=document.getElementById("std1").innerText;
+	var std2=document.getElementById("std2").innerText;
+	var std3=document.getElementById("std3").innerText;
+	var fival1=document.getElementById("fival1").innerText;
+	var fival2=document.getElementById("fival2").innerText;
+	var fival3=document.getElementById("fival3").innerText;
+	var IQR1=document.getElementById("IQR1").innerText;
+	var IQR2=document.getElementById("IQR2").innerText;
+	var IQR3=document.getElementById("IQR3").innerText;
+	var iqr_s=document.getElementById("iqr_s").innerText;
+	function motionHandler(event) {
+		if(flag)
+		{	
+			interv= event.interval;    //采样间隔
+			document.getElementById("interval").innerHTML=interv; 
+			var w=parseInt(1000/interv);  //采样频率
+			var p1=2*w;		//2s采样数
+			var p2=4*w;    //4s采样数
+			var p3=6*w;    //6s采样数
+			var acc = event.accelerationIncludingGravity;
+			xx=acc.x;
+			yy=acc.y;
+			zz=acc.z;
+			svm=Math.sqrt(xx*xx+yy*yy+zz*zz);
+
+			
+			document.getElementById("x").innerHTML = xx;
+			document.getElementById("y").innerHTML = yy;
+			document.getElementById("z").innerHTML = zz;
+			document.getElementById("svm").innerHTML = svm;
+			n+=1;
+			document.getElementById("n").innerHTML = parseInt(n/w);
+			if(ylst1.length<p1){
+				ylst1.push(yy);
+			}
+			if(ylst2.length<p2){
+				ylst2.push(yy);
+			}
+			if(ylst3.length<p3){
+				ylst3.push(yy);
+			}
+			if(svmlst1.length<p1){
+				svmlst1.push(svm);
+			}
+			if(svmlst2.length<p2){
+				svmlst2.push(svm);
+			}
+			if(svmlst3.length<p3){
+				svmlst3.push(svm);
+			}
+			
+			if(n%w==0 && n>=p3)
+			{
+				var ys1=ylst1.slice();
+				var ys2=ylst2.slice();
+				var ys3=ylst3.slice();
+				var sv1=svmlst1.slice();
+				var sv2=svmlst2.slice();
+				var sv3=svmlst3.slice();
+				
+				//2s特征提取
+				ylst1.sort(sortNumber);
+				svmlst1.sort(sortNumber);
+				sum1=0;
+				for(var i1=parseInt(0.6*p1)-1;i1<p1;i1++)
+				{
+					sum1+=ylst1[i1];
+				}
+				fival1=sum1/parseInt(0.4*p1); //Fi-val1
+				
+				IQR1=(svmlst1[parseInt((p1+1)*0.75)-1]*0.25+svmlst1[parseInt((p1+1)*0.75)]*0.75)-(svmlst1[parseInt((p1+1)*0.25)-1]*0.75+svmlst1[parseInt((p1+1)*0.25)]*0.25);  //IQR1
+				//alert(svmlst2.length);
+				//alert(sv1);
+				max1=svmlst1[p1-1];  //max1
+				min1=svmlst1[0];	//min1
+				sum2=0;
+				for(var ll=0;ll<p1;ll++)
+				{
+					sum2+=svmlst1[ll];
+				}
+				mean1=sum2/p1;  //mean1
+				
+				p_sum=0;
+				for(var tt=0;tt<p1;tt++)
+				{
+					p_sum+=(svmlst1[tt]-mean1)*(svmlst1[tt]-mean1);
+				}
+				std1=Math.sqrt(p_sum/p1);  //std1
+				document.getElementById("max1").innerHTML = max1;
+				document.getElementById("min1").innerHTML = min1;
+				document.getElementById("mean1").innerHTML = mean1;
+				document.getElementById("std1").innerHTML = std1;
+				document.getElementById("fival1").innerHTML = fival1;
+				document.getElementById("IQR1").innerHTML = IQR1;
+				
+				//4s特征提取
+				ylst2.sort(sortNumber);
+				//alert(svmlst2.toString());
+				svmlst2.sort(sortNumber);
+				//alert(svmlst2.toString());
+				sum1=0;
+				for(var i1=parseInt(0.6*p2)-1;i1<p2;i1++)
+				{
+					sum1+=ylst2[i1];
+				}
+				fival2=sum1/parseInt(0.4*p2); //Fi-val2
+				IQR2=(svmlst2[parseInt((p2+1)*0.75)-1]*0.25+svmlst2[parseInt((p2+1)*0.75)]*0.75)-(svmlst2[parseInt((p2+1)*0.25)-1]*0.75+svmlst2[parseInt((p2+1)*0.25)]*0.25);  //IQR2
+				max2=svmlst2[p2-1];  //max2
+				min2=svmlst2[0];  //min2
+				sum2=0;
+				for(var ll=0;ll<p2;ll++)
+				{
+					sum2+=svmlst2[ll];
+				}
+				mean2=sum2/p2;  //mean2
+				
+				p_sum=0;
+				for(var tt=0;tt<p2;tt++)
+				{
+					p_sum+=(svmlst2[tt]-mean2)*(svmlst2[tt]-mean2);
+				}
+				std2=Math.sqrt(p_sum/p2);  //std2
+				document.getElementById("max2").innerHTML = max2;
+				document.getElementById("min2").innerHTML = min2;
+				document.getElementById("mean2").innerHTML = mean2;
+				document.getElementById("std2").innerHTML = std2;
+				document.getElementById("fival2").innerHTML = fival2;
+				document.getElementById("IQR2").innerHTML = IQR2;
+				
+				//6s特征提取
+				iqr_s=ylst3[parseInt(p3*0.75)-1]-ylst3[parseInt(p3/3.0)-1]; //iqr_s
+				ylst3.sort(sortNumber);
+				svmlst3.sort(sortNumber);
+				sum1=0;
+				for(var i1=parseInt(0.6*p3)-1;i1<p3;i1++)
+				{
+					sum1+=ylst3[i1];
+				}
+				fival3=sum1/parseInt(p3*0.4); //Fi-val3
+				IQR3=(svmlst3[parseInt((p3+1)*0.75)-1]*0.25+svmlst3[parseInt((p3+1)*0.75)]*0.75)-(svmlst3[parseInt((p3+1)*0.25)-1]*0.75+svmlst3[parseInt((p3+1)*0.25)]*0.25); //IQR3
+				max3=svmlst3[p3-1];  //max3
+				min3=svmlst3[0];  //min3
+				sum2=0;
+				for(var ll=0;ll<p3;ll++)
+				{
+					sum2+=svmlst3[ll];
+				}
+				mean3=sum2/p3;  //mean3
+				
+				p_sum=0;
+				for(var tt=0;tt<p3;tt++)
+				{
+					p_sum+=(svmlst3[tt]-mean3)*(svmlst3[tt]-mean3);
+				}
+				std3=Math.sqrt(p_sum/p3);  //std3
+				document.getElementById("max3").innerHTML = max3;
+				document.getElementById("min3").innerHTML = min3;
+				document.getElementById("mean3").innerHTML = mean3;
+				document.getElementById("std3").innerHTML = std3;
+				document.getElementById("fival3").innerHTML = fival3;
+				document.getElementById("IQR3").innerHTML = IQR3;
+				document.getElementById("iqr_s").innerHTML = iqr_s;
+				//移除上一秒记录
+				for(var ss=0;ss<w;ss++)
+				{
+					ys1.shift();
+					ys2.shift();
+					ys3.shift();
+					sv1.shift();
+					sv2.shift();
+					sv3.shift();
+				}
+				ylst1=ys1.slice();
+				ylst2=ys2.slice();
+				ylst3=ys3.slice();
+				svmlst1=sv1.slice();
+				svmlst2=sv2.slice();
+				svmlst3=sv3.slice();
+			}
+		}
+    }
+    if (window.DeviceMotionEvent) 
+	{
+		window.addEventListener("devicemotion", motionHandler, false);
+    } 
+	else 
+	{
+		document.body.innerHTML = "What user agent u r using？？？";
+    }
+
+function detect()
+{
+	timer=setTimeout(detect,1000);
+    //获取接受返回信息层
+
+
+    var url = "/cgi-bin/getuser.py";    
+	//需要POST的值，把每个变量都通过&来联接
+	var postStr ="guid="+gd+"&max1="+max1+"&max2="+max2+"&max3="+max3+"&min1="+min1+"&min2="+min2+"&min3="+min3+"&mean1="+mean1+"&mean2="+mean2+"&mean3="+mean3+"&std1="+std1+"&std2="+std2+"&std3="+std3+"&fival1="+fival1+"&fival2="+fival2+"&fival3="+fival3+"&IQR1="+IQR1+"&IQR2="+IQR2+"&IQR3="+max3+"&iqr_s="+iqr_s;
+	var ajax=false;  
+	//开始初始化XMLHttpRequest对象
+    if(window.XMLHttpRequest) 
+    {   //Mozilla 浏览器        
+		ajax = new XMLHttpRequest();        
+		if (ajax.overrideMimeType) 
+        {    
+			//设置MiME类别            
+			ajax.overrideMimeType("text/xml");
+        }
+    }    
+	else if (window.ActiveXObject) 
+    {     // IE浏览器
+        try 
+        {
+            ajax = new ActiveXObject("Msxml2.XMLHTTP");
+        } 
+        catch (e) 
+        {            
+			try 
+            {
+                ajax = new ActiveXObject("Microsoft.XMLHTTP");
+            } 
+            catch (e) {}
+        }
+    }
+	if (!ajax) 
+	{     
+		// 异常，创建对象实例失败        
+		window.alert("不能创建XMLHttpRequest对象实例.");        
+		return false;
+	}    
+	//通过Post方式打开连接    
+	ajax.open("POST", url, true);    
+	//定义传输的文件HTTP头信息    
+	ajax.setRequestHeader("Content-Type","application/x-www-form-urlencoded");    
+	//发送POST数据 
+	ajax.send(postStr);  
+	//ajax.setTimeout(2000);	
+	//获取执行状态 
+	ajax.onreadystatechange = function() 
+	{ 
+		//如果执行状态成功，那么就把返回信息写到指定的层里
+		if (ajax.readyState == 4 && ajax.status == 200) 
+		{
+			myDate = new Date(); 
+			rs=parseInt(ajax.responseText);
+			if(document.getElementById("msg").getElementsByTagName("p").length>10)
+			{
+				document.getElementById("msg").removeChild(msg.getElementsByTagName("p")[0]);
+				document.getElementById("msg").innerHTML +="<p>"+myDate.toLocaleTimeString()+" "+acts_code[rs]+"</p>";
+				if(rs!=-1)
+				{
+					document.getElementById(acts_code[rs]).play();
+				}
+			}
+			else
+			{
+				document.getElementById("msg").innerHTML +="<p>"+myDate.toLocaleTimeString()+" "+acts_code[rs]+"</p>"; 
+				if(rs!=-1)
+				{
+					document.getElementById(acts_code[rs]).play();
+				}
+			}
+			//msg.innerHTML = ajax.return;     
+		}
+	}		
+}
+
+function bt_click()
+{
+	if(flag)
+	{
+		flag=false;
+		document.getElementById("bt").innerHTML="开始";
+		//window.clearInterval(ck);
+		clearTimeout(timer);
+	}
+	else
+	{
+		flag=true;
+		document.getElementById("bt").innerHTML="结束";
+		detect();
+		//ck=window.setInterval(detect(),1000);
+		n=0;
+	}
+}
+//setInterval(detect(),1000);
+</script>
+
+</body>
+</html>
